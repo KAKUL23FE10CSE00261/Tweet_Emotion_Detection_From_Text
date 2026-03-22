@@ -1,0 +1,18 @@
+# Streamlit secrets (for API keys, etc.) are stored in .streamlit/secrets.toml
+.streamlit/
+
+# Python virtual environment
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local checkpoints
+.ipynb_checkpoints/
+
+# Large model files (optional, but recommended if using GitHub)
+bert_model/
+*.pth
+*.safetensors
