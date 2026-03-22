@@ -2,7 +2,7 @@ flask==3.0.3
 flask-cors==4.0.1
 gunicorn==21.2.0
 
-torch==2.2.2
+torch>=2.0.0,<2.2.0
 transformers==4.41.2
 
 scikit-learn==1.4.2
