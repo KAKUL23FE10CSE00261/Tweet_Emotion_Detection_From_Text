@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EmotionAI | Neural Dashboard</title>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        :root {
+            --primary: #6366f1;
+            --accent: #f43f5e;
+            --bg: #0f172a;
+            --glass: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-dim: #94a3b8;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background: radial-gradient(circle at top right, #1e1b4b, var(--bg));
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif; /* Using the imported font */
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .dashboard-card {
+            background: var(--glass);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 28px;
+            padding: 40px;
+            width: 100%;
+            max-width: 1100px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 { font-weight: 700; font-size: 2.2rem; letter-spacing: -1px; text-align: center; margin-bottom: 30px; }
+        h4 { color: var(--text-dim); text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1.5px; margin-bottom: 15px; }
+
+        textarea {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--glass-border);
+            color: white;
+            border-radius: 16px;
+            padding: 20px;
+            font-size: 1.1rem;
+            width: 100%;
+            height: 120px;
+            resize: none;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: rgba(0, 0, 0, 0.3);
+            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
+        }
+
+        .btn-analyze {
+            background: linear-gradient(135deg, var(--primary), #4f46e5);
+            color: white;
+            font-weight: 600;
+            padding: 16px;
+            border-radius: 14px;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-analyze:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.5);
+        }
+
+        .btn-analyze:active { transform: translateY(0); }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--glass-border);
+            padding: 25px;
+            border-radius: 20px;
+            height: 100%;
+        }
+
+        .heatmap-box {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            line-height: 2.5;
+            font-size: 1.1rem;
+            min-height: 100px;
+        }
+
+        .token-span {
+            padding: 4px 6px;
+            border-radius: 6px;
+            margin: 0 1px;
+            font-weight: 500;
+            display: inline-block;
+        }
+
+        .ai-insight-box {
+            margin-top: 20px;
+            background: rgba(99, 102, 241, 0.08);
+            padding: 20px;
+            border-left: 4px solid var(--primary);
+            border-radius: 12px;
+            color: #cbd5e1;
+            font-style: italic;
+            line-height: 1.6;
+        }
+
+        .download-btn {
+            display: inline-block;
+            margin-top: 20px;
+            color: var(--text-dim);
+            text-decoration: none;
+            font-size: 0.85rem;
+            border-bottom: 1px solid transparent;
+            transition: 0.3s;
+        }
+
+        .download-btn:hover { color: var(--text-main); border-color: var(--text-main); }
+
+        @media (max-width: 850px) {
+            .grid-layout { grid-template-columns: 1fr !important; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="dashboard-card">
+    <h1>🎭 Emotion<span style="color:var(--primary)">AI</span></h1>
+    
+    <textarea id="userInput" placeholder="Paste tweet or text here..."></textarea>
+    <button class="btn-analyze" id="analyzeBtn" onclick="analyze()">Run Neural Analysis</button>
+
+    <div id="results" style="display:none; margin-top:40px;">
+        <div class="grid-layout" style="display:grid; grid-template-columns: 1fr 1fr; gap:30px;">
+            <div>
+                <div class="glass-panel">
+                    <h2 id="res-label" style="margin:0; color:var(--primary); font-size: 2rem;"></h2>
+                    <p style="opacity:0.6; margin-bottom: 20px;">Confidence Score: <span id="res-conf"></span></p>
+                    <div style="height:280px;"><canvas id="probChart"></canvas></div>
+                </div>
+            </div>
+
+            <div>
+                <div class="glass-panel">
+                    <h4>🧠 Explainable AI</h4>
+                    <div id="heatmap" class="heatmap-box"></div>
+                    
+                   <div class="ai-insight-box">
+                        <h4>Free LLM Explanation</h4>
+                        <p id="res-ai"></p>
+                    </div>
+
+                    <div class="ai-insight-box" style="margin-top:15px;">
+                        <h4>Controlled LLM Explanation</h4>
+                        <p id="res-ai-controlled"></p>
+                    </div>
+
+
+                    <div style="text-align: right;">
+                        <a href="/download_csv" id="downloadBtn" class="download-btn">📥 Export Session History (CSV)</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let myChart;
+
+async function analyze() {
+    const text = document.getElementById('userInput').value.trim();
+    const btn = document.getElementById('analyzeBtn');
+
+    if (!text) {
+        alert("Please enter some text!");
+        return;
+    }
+
+    // ---------- LOADING UI ----------
+    btn.innerText = "Analyzing...";
+    btn.style.opacity = "0.6";
+    btn.disabled = true;
+
+    try {
+        const fd = new FormData();
+        fd.append('text', text);
+
+        const response = await fetch('/predict', {
+            method: 'POST',
+            body: fd
+        });
+
+        if (!response.ok) {
+            throw new Error("Server Error " + response.status);
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+
+        // ---------- SHOW RESULTS ----------
+        document.getElementById('results').style.display = 'block';
+        document.getElementById('res-label').innerText = data.emotion.toUpperCase();
+        document.getElementById('res-conf').innerText = data.confidence;
+        
+        document.getElementById('res-ai').innerText = data.explanation || "No AI insight.";
+        document.getElementById('res-ai-controlled').innerText = data.controlled_explanation;
+
+
+        updateChart(data.all_probs || {});
+        renderHeatmap(data.attention_map || []);
+        loadMetrics();
+
+    } catch (err) {
+        console.error("ERROR:", err);
+        alert("Analysis failed. Check backend terminal.");
+    } finally {
+        btn.innerText = "Run Neural Analysis";
+        btn.style.opacity = "1";
+        btn.disabled = false;
+    }
+}
+
+function renderHeatmap(attentionMap) {
+    const heatmap = document.getElementById('heatmap');
+    heatmap.innerHTML = "";
+
+    if (!attentionMap || attentionMap.length === 0) {
+        heatmap.innerHTML = "<span style='opacity:0.6'>No attention data.</span>";
+        return;
+    }
+
+    const maxScore = Math.max(...attentionMap.map(t => t.score)) || 1;
+
+    attentionMap.forEach(item => {
+        const span = document.createElement('span');
+        const alpha = (item.score / maxScore) * 0.8 + 0.1;
+        span.className = 'token-span';
+        span.style.backgroundColor = `rgba(244, 63, 94, ${alpha})`;
+        span.innerText = item.prefix + item.token;
+        heatmap.appendChild(span);
+    });
+}
+
+function updateChart(probData) {
+    const ctx = document.getElementById('probChart').getContext('2d');
+    if (myChart) myChart.destroy();
+
+    if (!probData || Object.keys(probData).length === 0) return;
+
+    myChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: Object.keys(probData).map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+            datasets: [{
+                label: 'Probability',
+                data: Object.values(probData),
+                backgroundColor: 'rgba(99,102,241,0.4)',
+                borderColor: '#6366f1',
+                borderWidth: 2,
+                borderRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 1,
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#94a3b8' }
+                },
+                x: {
+                    grid: { display: false },
+                    ticks: { color: '#94a3b8' }
+                }
+            }
+        }
+    });
+}
+
+async function loadMetrics() {
+    try {
+        const res = await fetch('/metrics');
+        const data = await res.json();
+
+        document.getElementById("accuracyText").innerText =
+            "Model Accuracy: " + (data.accuracy * 100).toFixed(2) + "%";
+
+        document.getElementById("cmImage").src = data.confusion_matrix;
+    } catch (err) {
+        console.error("Metrics Error:", err);
+    }
+}
+
+</script>
+
+</body>
+</html>
