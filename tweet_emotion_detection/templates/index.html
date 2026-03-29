@@ -4,203 +4,357 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EmotionAI | Neural Dashboard</title>
-
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
     <style>
         :root {
             --primary: #6366f1;
-            --accent: #f43f5e;
-            --bg: #0f172a;
-            --glass: rgba(255, 255, 255, 0.03);
-            --glass-border: rgba(255, 255, 255, 0.1);
+            --accent:  #f43f5e;
+            --bg:      #0f172a;
+            --glass:   rgba(255,255,255,0.03);
+            --glass-border: rgba(255,255,255,0.1);
             --text-main: #f8fafc;
-            --text-dim: #94a3b8;
+            --text-dim:  #94a3b8;
         }
-
         * { box-sizing: border-box; }
-
         body {
             background: radial-gradient(circle at top right, #1e1b4b, var(--bg));
             color: var(--text-main);
-            font-family: 'Inter', sans-serif; /* Using the imported font */
+            font-family: 'Inter', sans-serif;
             min-height: 100vh;
             margin: 0;
             display: flex;
             justify-content: center;
-            align-items: center;
-            padding: 20px;
+            align-items: flex-start;
+            padding: 30px 20px;
         }
-
         .dashboard-card {
             background: var(--glass);
             backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
             border: 1px solid var(--glass-border);
             border-radius: 28px;
             padding: 40px;
             width: 100%;
-            max-width: 1100px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            max-width: 1200px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
         }
+        h1 { font-weight:700; font-size:2.2rem; letter-spacing:-1px; text-align:center; margin-bottom:6px; }
+        .subtitle { text-align:center; color:var(--text-dim); margin-bottom:28px; font-size:0.9rem; }
+        h4 { color:var(--text-dim); text-transform:uppercase; font-size:0.78rem; letter-spacing:1.5px; margin-bottom:12px; }
 
-        h1 { font-weight: 700; font-size: 2.2rem; letter-spacing: -1px; text-align: center; margin-bottom: 30px; }
-        h4 { color: var(--text-dim); text-transform: uppercase; font-size: 0.8rem; letter-spacing: 1.5px; margin-bottom: 15px; }
+        /* ── Context Toggle ── */
+        .context-toggle-bar { display:flex; align-items:center; gap:12px; margin-bottom:14px; }
+        .toggle-switch { position:relative; width:48px; height:26px; flex-shrink:0; }
+        .toggle-switch input { opacity:0; width:0; height:0; }
+        .slider { position:absolute; inset:0; background:rgba(255,255,255,0.12); border-radius:26px; cursor:pointer; transition:0.3s; }
+        .slider::before { content:""; position:absolute; width:18px; height:18px; left:4px; bottom:4px; background:white; border-radius:50%; transition:0.3s; }
+        input:checked + .slider { background:var(--primary); }
+        input:checked + .slider::before { transform:translateX(22px); }
+        .toggle-label { font-size:0.9rem; color:var(--text-dim); }
+        .toggle-label span { color:var(--text-main); font-weight:600; }
 
-        textarea {
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid var(--glass-border);
-            color: white;
-            border-radius: 16px;
-            padding: 20px;
-            font-size: 1.1rem;
-            width: 100%;
-            height: 120px;
-            resize: none;
-            transition: all 0.3s ease;
-            font-family: inherit;
-        }
+        /* ── Pipeline badge ── */
+        .pipeline-badge { display:none; align-items:center; gap:6px; flex-wrap:wrap; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.25); border-radius:12px; padding:10px 16px; margin-bottom:16px; font-size:0.82rem; color:var(--text-dim); }
+        .pipeline-badge.visible { display:flex; }
+        .pipe-step { background:rgba(255,255,255,0.06); border-radius:6px; padding:4px 10px; color:var(--text-main); font-weight:600; white-space:nowrap; }
+        .pipe-arrow { color:#6366f1; font-size:1rem; }
 
-        textarea:focus {
-            outline: none;
-            border-color: var(--primary);
-            background: rgba(0, 0, 0, 0.3);
-            box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.2);
-        }
+        /* ── Textareas ── */
+        .textarea-label { font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:1.2px; color:var(--text-dim); margin-bottom:6px; }
+        textarea { background:rgba(0,0,0,0.2); border:1px solid var(--glass-border); color:white; border-radius:16px; padding:20px; font-size:1.05rem; width:100%; resize:none; transition:all 0.3s; font-family:inherit; }
+        textarea:focus { outline:none; border-color:var(--primary); background:rgba(0,0,0,0.3); box-shadow:0 0 0 4px rgba(99,102,241,0.2); }
+        #prevInput { height:90px; border-color:rgba(99,102,241,0.4); }
+        #userInput { height:110px; }
+        #contextInputGroup { display:none; margin-bottom:14px; }
+        #contextInputGroup.visible { display:block; }
+        .sep-divider { display:none; align-items:center; gap:10px; margin:10px 0; color:var(--text-dim); font-size:0.8rem; }
+        .sep-divider.visible { display:flex; }
+        .sep-pill { background:rgba(99,102,241,0.18); border:1px solid rgba(99,102,241,0.4); color:#a5b4fc; padding:3px 10px; border-radius:20px; font-weight:700; font-size:0.78rem; letter-spacing:1px; }
+        .sep-line { flex:1; height:1px; background:rgba(255,255,255,0.07); }
 
-        .btn-analyze {
-            background: linear-gradient(135deg, var(--primary), #4f46e5);
-            color: white;
-            font-weight: 600;
-            padding: 16px;
-            border-radius: 14px;
-            border: none;
-            cursor: pointer;
-            width: 100%;
-            margin-top: 20px;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            transition: all 0.3s ease;
-        }
+        .btn-analyze { background:linear-gradient(135deg,var(--primary),#4f46e5); color:white; font-weight:600; padding:16px; border-radius:14px; border:none; cursor:pointer; width:100%; margin-top:16px; text-transform:uppercase; letter-spacing:1.5px; transition:all 0.3s; }
+        .btn-analyze:hover { transform:translateY(-2px); box-shadow:0 10px 20px -5px rgba(99,102,241,0.5); }
+        .btn-analyze:active { transform:translateY(0); }
 
-        .btn-analyze:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px -5px rgba(99, 102, 241, 0.5);
-        }
+        /* ── Results ── */
+        .glass-panel { background:rgba(255,255,255,0.02); border:1px solid var(--glass-border); padding:25px; border-radius:20px; }
 
-        .btn-analyze:active { transform: translateY(0); }
+        .mode-badge { display:inline-block; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:1px; padding:3px 10px; border-radius:20px; margin-bottom:8px; }
+        .mode-badge.contextual { background:rgba(99,102,241,0.2); color:#a5b4fc; border:1px solid rgba(99,102,241,0.4); }
+        .mode-badge.standard   { background:rgba(148,163,184,0.1); color:#94a3b8; border:1px solid rgba(148,163,184,0.2); }
 
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.02);
-            border: 1px solid var(--glass-border);
-            padding: 25px;
+        /* ── Heatmap ── */
+        .heatmap-box { background:rgba(0,0,0,0.2); border-radius:12px; padding:20px; line-height:2.8; font-size:1.05rem; min-height:80px; }
+        .token-span { padding:4px 6px; border-radius:6px; margin:0 1px; font-weight:500; display:inline-block; cursor:default; }
+        .token-span:hover::after { content:attr(data-tip); position:absolute; background:#1e293b; border:1px solid rgba(255,255,255,0.15); color:#e2e8f0; font-size:0.72rem; padding:4px 8px; border-radius:6px; white-space:nowrap; margin-top:-40px; margin-left:-20px; z-index:10; }
+        .token-span { position:relative; }
+        .token-sep { display:inline-block; padding:2px 8px; margin:0 6px; border-radius:20px; font-size:0.72rem; font-weight:700; letter-spacing:1px; background:rgba(99,102,241,0.2); border:1px solid rgba(99,102,241,0.5); color:#a5b4fc; vertical-align:middle; }
+        .heatmap-legend { display:none; gap:18px; margin-top:10px; font-size:0.76rem; color:var(--text-dim); }
+        .heatmap-legend.visible { display:flex; }
+        .legend-dot { width:11px; height:11px; border-radius:3px; display:inline-block; margin-right:5px; vertical-align:middle; }
+
+        /* ── Insights ── */
+        .ai-insight-box { margin-top:18px; background:rgba(99,102,241,0.08); padding:18px 20px; border-left:4px solid var(--primary); border-radius:12px; color:#cbd5e1; font-style:italic; line-height:1.7; }
+
+        /* ================================================================
+           XAI WHY PANEL  ← NEW
+        ================================================================ */
+        .xai-why-panel {
+            margin-top: 28px;
+            border: 1px solid rgba(255,255,255,0.08);
             border-radius: 20px;
-            height: 100%;
+            overflow: hidden;
+        }
+        .xai-why-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 18px 24px;
+            background: rgba(99,102,241,0.10);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            cursor: pointer;
+            user-select: none;
+        }
+        .xai-why-header h3 { margin:0; font-size:1rem; font-weight:700; }
+        .xai-why-header .emotion-chip {
+            margin-left: auto;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        .xai-why-header .chevron { font-size:1.1rem; transition:transform 0.3s; }
+        .xai-why-header.open .chevron { transform: rotate(180deg); }
+
+        .xai-why-body { display: none; padding: 24px; background: rgba(0,0,0,0.15); }
+        .xai-why-body.open { display: block; }
+
+        /* Trigger words */
+        .trigger-words { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+        .trigger-chip {
+            padding: 5px 14px;
+            border-radius: 20px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            background: rgba(99,102,241,0.18);
+            border: 1px solid rgba(99,102,241,0.4);
+            color: #c7d2fe;
+            letter-spacing: 0.3px;
         }
 
-        .heatmap-box {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 12px;
-            padding: 20px;
-            line-height: 2.5;
-            font-size: 1.1rem;
-            min-height: 100px;
+        /* Explanation cards */
+        .xai-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+        @media(max-width:700px){ .xai-cards { grid-template-columns: 1fr; } }
+        .xai-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 16px 18px;
         }
-
-        .token-span {
-            padding: 4px 6px;
-            border-radius: 6px;
-            margin: 0 1px;
-            font-weight: 500;
-            display: inline-block;
-        }
-
-        .ai-insight-box {
-            margin-top: 20px;
-            background: rgba(99, 102, 241, 0.08);
-            padding: 20px;
-            border-left: 4px solid var(--primary);
-            border-radius: 12px;
-            color: #cbd5e1;
-            font-style: italic;
-            line-height: 1.6;
-        }
-
-        .download-btn {
-            display: inline-block;
-            margin-top: 20px;
+        .xai-card-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
             color: var(--text-dim);
-            text-decoration: none;
-            font-size: 0.85rem;
-            border-bottom: 1px solid transparent;
-            transition: 0.3s;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
+        .xai-card p { margin:0; font-size:0.88rem; line-height:1.65; color:#cbd5e1; }
 
-        .download-btn:hover { color: var(--text-main); border-color: var(--text-main); }
-
-        @media (max-width: 850px) {
-            .grid-layout { grid-template-columns: 1fr !important; }
+        /* Gemini 3-part deep-dive */
+        .gemini-why-block {
+            background: rgba(99,102,241,0.06);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 14px;
+            padding: 18px 20px;
+            margin-top: 4px;
         }
+        .gemini-why-block h4 { margin-bottom: 14px; }
+        .why-part {
+            margin-bottom: 12px;
+            padding-left: 14px;
+            border-left: 3px solid rgba(99,102,241,0.5);
+        }
+        .why-part:last-child { margin-bottom: 0; }
+        .why-part-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #818cf8;
+            margin-bottom: 4px;
+        }
+        .why-part p { margin:0; font-size:0.88rem; line-height:1.65; color:#cbd5e1; }
+
+        .download-btn { display:inline-block; margin-top:20px; color:var(--text-dim); text-decoration:none; font-size:0.85rem; border-bottom:1px solid transparent; transition:0.3s; }
+        .download-btn:hover { color:var(--text-main); border-color:var(--text-main); }
+
+        @media(max-width:850px){ .grid-layout { grid-template-columns:1fr !important; } }
     </style>
 </head>
 <body>
 
 <div class="dashboard-card">
     <h1>🎭 Emotion<span style="color:var(--primary)">AI</span></h1>
-    
+    <p class="subtitle">BERT-powered emotion detection · Attention + Gradient XAI · Contextual modeling</p>
+
+    <!-- Context Toggle -->
+    <div class="context-toggle-bar">
+        <label class="toggle-switch">
+            <input type="checkbox" id="contextToggle" onchange="toggleContext()">
+            <span class="slider"></span>
+        </label>
+        <span class="toggle-label">
+            <span>Contextual Mode</span> — feed previous message via [SEP] token
+        </span>
+    </div>
+
+    <div class="pipeline-badge" id="pipelineBadge">
+        <span class="pipe-step">Previous Text</span><span class="pipe-arrow">+</span>
+        <span class="pipe-step">[SEP]</span><span class="pipe-arrow">+</span>
+        <span class="pipe-step">Current Text</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">Tokenizer</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">BERT</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">Softmax</span><span class="pipe-arrow">→</span>
+        <span class="pipe-step">🎭 Emotion</span>
+    </div>
+
+    <div id="contextInputGroup">
+        <div class="textarea-label">Previous Message (context)</div>
+        <textarea id="prevInput" placeholder="Type the previous message here..."></textarea>
+        <div class="sep-divider visible">
+            <div class="sep-line"></div><span class="sep-pill">[SEP]</span><div class="sep-line"></div>
+        </div>
+    </div>
+
+    <div class="textarea-label" id="currentLabel">Text to Analyze</div>
     <textarea id="userInput" placeholder="Paste tweet or text here..."></textarea>
     <button class="btn-analyze" id="analyzeBtn" onclick="analyze()">Run Neural Analysis</button>
 
+    <!-- Results -->
     <div id="results" style="display:none; margin-top:40px;">
-        <div class="grid-layout" style="display:grid; grid-template-columns: 1fr 1fr; gap:30px;">
+        <div class="grid-layout" style="display:grid; grid-template-columns:1fr 1fr; gap:30px;">
+
+            <!-- Left: emotion + chart -->
             <div>
                 <div class="glass-panel">
-                    <h2 id="res-label" style="margin:0; color:var(--primary); font-size: 2rem;"></h2>
-                    <p style="opacity:0.6; margin-bottom: 20px;">Confidence Score: <span id="res-conf"></span></p>
+                    <div id="modeBadge" class="mode-badge"></div>
+                    <h2 id="res-label" style="margin:4px 0; color:var(--primary); font-size:2rem;"></h2>
+                    <p style="opacity:0.6; margin-bottom:20px;">Confidence: <span id="res-conf"></span></p>
                     <div style="height:280px;"><canvas id="probChart"></canvas></div>
                 </div>
             </div>
 
+            <!-- Right: heatmap + original explanations -->
             <div>
                 <div class="glass-panel">
-                    <h4>🧠 Explainable AI</h4>
+                    <h4>🧠 Attention Heatmap</h4>
+                    <div class="heatmap-legend" id="heatmapLegend">
+                        <span><span class="legend-dot" style="background:rgba(99,102,241,0.7)"></span>Previous context</span>
+                        <span><span class="legend-dot" style="background:rgba(244,63,94,0.7)"></span>Current text</span>
+                        <span style="margin-left:auto; font-size:0.7rem;">opacity = attention weight</span>
+                    </div>
                     <div id="heatmap" class="heatmap-box"></div>
-                    
-                   <div class="ai-insight-box">
+
+                    <div class="ai-insight-box">
                         <h4>Free LLM Explanation</h4>
                         <p id="res-ai"></p>
                     </div>
-
-                    <div class="ai-insight-box" style="margin-top:15px;">
+                    <div class="ai-insight-box" style="margin-top:14px;">
                         <h4>Controlled LLM Explanation</h4>
                         <p id="res-ai-controlled"></p>
                     </div>
 
-
-                    <div style="text-align: right;">
-                        <a href="/download_csv" id="downloadBtn" class="download-btn">📥 Export Session History (CSV)</a>
+                    <div style="text-align:right;">
+                        <a href="/download_csv" class="download-btn">📥 Export Session History (CSV)</a>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
+
+        <!-- ================================================================
+             XAI WHY PANEL  ← NEW full-width
+        ================================================================ -->
+        <div class="xai-why-panel" id="xaiWhyPanel" style="margin-top:28px;">
+            <div class="xai-why-header" id="xaiWhyHeader" onclick="toggleXaiPanel()">
+                <span style="font-size:1.3rem;">🔍</span>
+                <h3>Explainable AI — Why was this emotion predicted?</h3>
+                <span class="emotion-chip" id="xaiEmotionChip"></span>
+                <span class="chevron" id="xaiChevron">▼</span>
+            </div>
+            <div class="xai-why-body open" id="xaiWhyBody">
+
+                <!-- Trigger words -->
+                <div style="margin-bottom:18px;">
+                    <h4>🎯 Top Trigger Words (Attention + Gradient Saliency)</h4>
+                    <div class="trigger-words" id="triggerWords"></div>
+                </div>
+
+                <!-- 4 insight cards -->
+                <div class="xai-cards">
+                    <div class="xai-card">
+                        <div class="xai-card-title">👁 Attention Focus</div>
+                        <p id="xaiAttentionNote"></p>
+                    </div>
+                    <div class="xai-card">
+                        <div class="xai-card-title">⚡ Gradient Saliency</div>
+                        <p id="xaiGradientNote"></p>
+                    </div>
+                    <div class="xai-card" id="xaiContextCard" style="display:none;">
+                        <div class="xai-card-title">🔗 Context Influence</div>
+                        <p id="xaiContextNote"></p>
+                    </div>
+                    <div class="xai-card">
+                        <div class="xai-card-title">📊 Confidence Interpretation</div>
+                        <p id="xaiConfidenceNote"></p>
+                    </div>
+                </div>
+
+                <!-- Gemini 3-part deep-dive -->
+                <div class="gemini-why-block">
+                    <h4>🤖 Deep Linguistic Analysis (Gemini AI)</h4>
+                    <div id="xaiWhyParts"></div>
+                </div>
+
+            </div>
+        </div>
+
+    </div><!-- /results -->
 </div>
 
 <script>
 let myChart;
+let xaiPanelOpen = true;
+
+function toggleXaiPanel() {
+    xaiPanelOpen = !xaiPanelOpen;
+    document.getElementById('xaiWhyBody').classList.toggle('open', xaiPanelOpen);
+    document.getElementById('xaiWhyHeader').classList.toggle('open', xaiPanelOpen);
+}
+
+function toggleContext() {
+    const on = document.getElementById('contextToggle').checked;
+    document.getElementById('contextInputGroup').classList.toggle('visible', on);
+    document.getElementById('pipelineBadge').classList.toggle('visible', on);
+    document.getElementById('currentLabel').innerText = on ? 'Current Text' : 'Text to Analyze';
+}
 
 async function analyze() {
     const text = document.getElementById('userInput').value.trim();
+    const contextOn = document.getElementById('contextToggle').checked;
+    const previousText = contextOn ? document.getElementById('prevInput').value.trim() : '';
     const btn = document.getElementById('analyzeBtn');
 
-    if (!text) {
-        alert("Please enter some text!");
+    if (!text) { alert("Please enter some text!"); return; }
+    if (contextOn && !previousText) {
+        alert("Contextual mode is ON — please enter the previous message, or turn off contextual mode.");
         return;
     }
 
-    // ---------- LOADING UI ----------
     btn.innerText = "Analyzing...";
     btn.style.opacity = "0.6";
     btn.disabled = true;
@@ -208,35 +362,34 @@ async function analyze() {
     try {
         const fd = new FormData();
         fd.append('text', text);
+        if (previousText) fd.append('previous_text', previousText);
 
-        const response = await fetch('/predict', {
-            method: 'POST',
-            body: fd
-        });
-
-        if (!response.ok) {
-            throw new Error("Server Error " + response.status);
-        }
+        const response = await fetch('/predict', { method:'POST', body:fd });
+        if (!response.ok) throw new Error("Server Error " + response.status);
 
         const data = await response.json();
+        if (data.error) { alert(data.error); return; }
 
-        if (data.error) {
-            alert(data.error);
-            return;
-        }
-
-        // ---------- SHOW RESULTS ----------
         document.getElementById('results').style.display = 'block';
         document.getElementById('res-label').innerText = data.emotion.toUpperCase();
-        document.getElementById('res-conf').innerText = data.confidence;
-        
-        document.getElementById('res-ai').innerText = data.explanation || "No AI insight.";
+        document.getElementById('res-conf').innerText  = data.confidence;
+        document.getElementById('res-ai').innerText    = data.explanation || "No AI insight.";
         document.getElementById('res-ai-controlled').innerText = data.controlled_explanation;
 
+        // Mode badge
+        const badge = document.getElementById('modeBadge');
+        if (data.contextual_mode) {
+            badge.className = 'mode-badge contextual';
+            badge.innerText = '🔗 Contextual Mode (Previous + [SEP] + Current)';
+        } else {
+            badge.className = 'mode-badge standard';
+            badge.innerText = '📝 Standard Mode';
+        }
 
+        document.getElementById('heatmapLegend').classList.toggle('visible', data.contextual_mode);
         updateChart(data.all_probs || {});
-        renderHeatmap(data.attention_map || []);
-        loadMetrics();
+        renderHeatmap(data.attention_map || [], data.contextual_mode);
+        renderXaiWhy(data.xai_explanation || null);
 
     } catch (err) {
         console.error("ERROR:", err);
@@ -248,31 +401,120 @@ async function analyze() {
     }
 }
 
-function renderHeatmap(attentionMap) {
+/* ── Render XAI WHY panel ── */
+function renderXaiWhy(xai) {
+    if (!xai) return;
+
+    // Chip on header
+    const chip = document.getElementById('xaiEmotionChip');
+    chip.innerText = (xai.emoji || '') + ' ' + xai.emotion.toUpperCase();
+    chip.style.background = (xai.color || '#6366f1') + '33';
+    chip.style.color       = xai.color || '#a5b4fc';
+    chip.style.border      = '1px solid ' + (xai.color || '#6366f1') + '66';
+
+    // Trigger words
+    const tw = document.getElementById('triggerWords');
+    tw.innerHTML = '';
+    (xai.trigger_words || []).forEach((w, i) => {
+        const chip = document.createElement('span');
+        chip.className = 'trigger-chip';
+        chip.innerText = `#${i+1} ${w}`;
+        tw.appendChild(chip);
+    });
+
+    // Cards
+    document.getElementById('xaiAttentionNote').innerText  = xai.attention_note  || '';
+    document.getElementById('xaiGradientNote').innerText   = xai.gradient_note   || '';
+    document.getElementById('xaiConfidenceNote').innerText = xai.confidence_note || '';
+
+    const ctxCard = document.getElementById('xaiContextCard');
+    if (xai.context_note) {
+        ctxCard.style.display = 'block';
+        document.getElementById('xaiContextNote').innerText = xai.context_note;
+    } else {
+        ctxCard.style.display = 'none';
+    }
+
+    // Gemini 3-part deep-dive
+    const parts = document.getElementById('xaiWhyParts');
+    parts.innerHTML = '';
+    if (xai.llm_why) {
+        const lines = xai.llm_why.split('\n').filter(l => l.trim());
+        lines.forEach(line => {
+            const colonIdx = line.indexOf(':');
+            if (colonIdx === -1) {
+                const p = document.createElement('p');
+                p.style.cssText = 'font-size:0.88rem;color:#cbd5e1;margin:6px 0;';
+                p.innerText = line;
+                parts.appendChild(p);
+                return;
+            }
+            const label   = line.slice(0, colonIdx).trim();
+            const content = line.slice(colonIdx + 1).trim();
+
+            const div = document.createElement('div');
+            div.className = 'why-part';
+            div.innerHTML = `<div class="why-part-label">${label}</div><p>${content}</p>`;
+            parts.appendChild(div);
+        });
+    }
+
+    // Keep panel open after each analysis
+    xaiPanelOpen = true;
+    document.getElementById('xaiWhyBody').classList.add('open');
+    document.getElementById('xaiWhyHeader').classList.add('open');
+}
+
+/* ── Attention Heatmap ── */
+function renderHeatmap(attentionMap, contextualMode) {
     const heatmap = document.getElementById('heatmap');
-    heatmap.innerHTML = "";
+    heatmap.innerHTML = '';
 
     if (!attentionMap || attentionMap.length === 0) {
         heatmap.innerHTML = "<span style='opacity:0.6'>No attention data.</span>";
         return;
     }
 
-    const maxScore = Math.max(...attentionMap.map(t => t.score)) || 1;
+    const scores  = attentionMap.filter(t => !t.is_sep).map(t => t.combined || t.score);
+    const maxScore = Math.max(...scores) || 1;
 
     attentionMap.forEach(item => {
-        const span = document.createElement('span');
-        const alpha = (item.score / maxScore) * 0.8 + 0.1;
+        if (item.is_sep) {
+            const sep = document.createElement('span');
+            sep.className = 'token-sep';
+            sep.innerText = '[SEP]';
+            heatmap.appendChild(sep);
+            return;
+        }
+
+        const span  = document.createElement('span');
         span.className = 'token-span';
-        span.style.backgroundColor = `rgba(244, 63, 94, ${alpha})`;
+        const score = item.combined || item.score;
+        const alpha = (score / maxScore) * 0.8 + 0.1;
+
+        if (contextualMode) {
+            span.style.backgroundColor = item.segment === 0
+                ? `rgba(99,102,241,${alpha})`
+                : `rgba(244,63,94,${alpha})`;
+        } else {
+            span.style.backgroundColor = `rgba(244,63,94,${alpha})`;
+        }
+
+        // Tooltip: show attention + saliency scores
+        const attnPct  = ((item.score    || 0) * 100).toFixed(1);
+        const salPct   = ((item.saliency || 0) * 100).toFixed(1);
+        span.setAttribute('data-tip', `attn:${attnPct}% sal:${salPct}%`);
+        span.title = `Attention: ${attnPct}%  |  Saliency: ${salPct}%`;
+
         span.innerText = item.prefix + item.token;
         heatmap.appendChild(span);
     });
 }
 
+/* ── Bar Chart ── */
 function updateChart(probData) {
     const ctx = document.getElementById('probChart').getContext('2d');
     if (myChart) myChart.destroy();
-
     if (!probData || Object.keys(probData).length === 0) return;
 
     myChart = new Chart(ctx, {
@@ -291,38 +533,14 @@ function updateChart(probData) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
+            plugins: { legend: { display:false } },
             scales: {
-                y: {
-                    beginAtZero: true,
-                    max: 1,
-                    grid: { color: 'rgba(255,255,255,0.05)' },
-                    ticks: { color: '#94a3b8' }
-                },
-                x: {
-                    grid: { display: false },
-                    ticks: { color: '#94a3b8' }
-                }
+                y: { beginAtZero:true, max:1, grid:{ color:'rgba(255,255,255,0.05)' }, ticks:{ color:'#94a3b8' } },
+                x: { grid:{ display:false }, ticks:{ color:'#94a3b8' } }
             }
         }
     });
 }
-
-async function loadMetrics() {
-    try {
-        const res = await fetch('/metrics');
-        const data = await res.json();
-
-        document.getElementById("accuracyText").innerText =
-            "Model Accuracy: " + (data.accuracy * 100).toFixed(2) + "%";
-
-        document.getElementById("cmImage").src = data.confusion_matrix;
-    } catch (err) {
-        console.error("Metrics Error:", err);
-    }
-}
-
 </script>
-
 </body>
 </html>

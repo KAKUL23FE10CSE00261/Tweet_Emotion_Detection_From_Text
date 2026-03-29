@@ -13,6 +13,5 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Large model files (optional, but recommended if using GitHub)
-bert_model/
-*.pth
+#bert_model/
 *.safetensors
