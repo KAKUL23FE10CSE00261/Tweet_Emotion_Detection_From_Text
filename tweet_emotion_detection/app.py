@@ -11,133 +11,274 @@ import google.generativeai as genai
 app = Flask("Tweet Emotion Detection")
 CORS(app)
 
+# ================================================================
+# GEMINI SETUP
+# ================================================================
 GEMINI_KEY = "AIzaSyBTFc17pWhYuGFD32hUTL-7Sy70QIlxwk4"
 
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
-    gemini_model = genai.GenerativeModel("models/gemini-1.5-flash")
-    print("Gemini Connected")
+    gemini_model = genai.GenerativeModel("gemini-2.0-flash")
+    print("✅ Gemini Connected")
 else:
     gemini_model = None
-    print("Gemini Not Connected")
+    print("❌ Gemini Not Connected")
 
-# ---------------- PATH SETUP ----------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# ================================================================
+# DEVICE
+# ================================================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")
+print(f"🖥  Using device: {device}")
 
-# ---------------- LOAD MODEL ----------------
-tokenizer, model = None, None
+# ================================================================
+# MODEL 1 — Original BERT (bert_model/)
+# Used for: Single Text tab (Tab 1)
+# ================================================================
+bert_tokenizer, bert_model = None, None
 try:
-    model_dir = (Path(__file__).parent / "bert_model").resolve()
-    tokenizer = AutoTokenizer.from_pretrained(model_dir.as_posix(), local_files_only=True)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_dir.as_posix(),
-        local_files_only=True,
-        use_safetensors=True,
-        output_attentions=True
+    bert_dir = (Path(__file__).parent / "bert_model").resolve()
+    bert_tokenizer = AutoTokenizer.from_pretrained(bert_dir.as_posix(), local_files_only=True)
+    bert_model = AutoModelForSequenceClassification.from_pretrained(
+        bert_dir.as_posix(), local_files_only=True, output_attentions=True
     ).to(device)
-    model.eval()
-    print("✅ BERT Loaded Successfully")
+    bert_model.eval()
+    print("✅ Original BERT Loaded  →  bert_model/")
 except Exception as e:
-    print(f"❌ MODEL LOAD FAILED: {e}")
+    print(f"❌ BERT LOAD FAILED: {e}")
 
-# ---------------- AUTO LABELS ----------------
-if model and hasattr(model.config, "id2label") and model.config.id2label:
-    emotion_labels = list(model.config.id2label.values())
-else:
-    emotion_labels = ['anger', 'joy', 'love', 'sadness', 'surprise', 'neutral']
+# ================================================================
+# MODEL 2 — RoBERTa (bert_contextual_model/)
+# Used for: Tab 2 (Contextual) + Tab 3 (Conversation History)
+# ================================================================
+roberta_tokenizer, roberta_model = None, None
+try:
+    roberta_dir = (Path(__file__).parent / "bert_contextual_model").resolve()
+    roberta_tokenizer = AutoTokenizer.from_pretrained(roberta_dir.as_posix(), local_files_only=True)
+    roberta_model = AutoModelForSequenceClassification.from_pretrained(
+        roberta_dir.as_posix(), local_files_only=True, output_attentions=True
+    ).to(device)
+    roberta_model.eval()
+    print("✅ RoBERTa Contextual Loaded  →  bert_contextual_model/")
+except Exception as e:
+    print(f"❌ ROBERTA LOAD FAILED: {e}")
 
-# ---------------- LABEL MAP ----------------
+# ================================================================
+# HELPER — pick correct model/tokenizer
+# ================================================================
+def _get_model(contextual=False):
+    if contextual:
+        if roberta_model is not None:
+            return roberta_tokenizer, roberta_model, "roberta"
+        elif bert_model is not None:
+            print("⚠️  RoBERTa not loaded, falling back to BERT")
+            return bert_tokenizer, bert_model, "bert"
+    else:
+        if bert_model is not None:
+            return bert_tokenizer, bert_model, "bert"
+        elif roberta_model is not None:
+            print("⚠️  BERT not loaded, falling back to RoBERTa")
+            return roberta_tokenizer, roberta_model, "roberta"
+    return None, None, None
+
+# ================================================================
+# LABELS
+# ================================================================
 label_map = {
-    "LABEL_0": "anger",     "LABEL_1": "boredom",  "LABEL_2": "empty",
-    "LABEL_3": "enthusiasm","LABEL_4": "fun",       "LABEL_5": "happiness",
-    "LABEL_6": "hate",      "LABEL_7": "love",      "LABEL_8": "neutral",
-    "LABEL_9": "relief",    "LABEL_10": "sadness",  "LABEL_11": "surprise",
+    "LABEL_0":  "anger",      "LABEL_1":  "boredom",  "LABEL_2":  "empty",
+    "LABEL_3":  "enthusiasm", "LABEL_4":  "fun",      "LABEL_5":  "happiness",
+    "LABEL_6":  "hate",       "LABEL_7":  "love",     "LABEL_8":  "neutral",
+    "LABEL_9":  "relief",     "LABEL_10": "sadness",  "LABEL_11": "surprise",
     "LABEL_12": "worry"
 }
 
-# Emotion → emoji + color
 EMOTION_META = {
-    "anger":      {"emoji": "😠", "color": "#ef4444"},
-    "boredom":    {"emoji": "😑", "color": "#94a3b8"},
-    "empty":      {"emoji": "😶", "color": "#64748b"},
-    "enthusiasm": {"emoji": "🤩", "color": "#f59e0b"},
-    "fun":        {"emoji": "😄", "color": "#22c55e"},
-    "happiness":  {"emoji": "😊", "color": "#facc15"},
-    "hate":       {"emoji": "🤬", "color": "#dc2626"},
+    "anger":      {"emoji": "😠",  "color": "#ef4444"},
+    "boredom":    {"emoji": "😑",  "color": "#94a3b8"},
+    "empty":      {"emoji": "😶",  "color": "#64748b"},
+    "enthusiasm": {"emoji": "🤩",  "color": "#f59e0b"},
+    "fun":        {"emoji": "😄",  "color": "#22c55e"},
+    "happiness":  {"emoji": "😊",  "color": "#facc15"},
+    "hate":       {"emoji": "🤬",  "color": "#dc2626"},
     "love":       {"emoji": "❤️",  "color": "#ec4899"},
-    "neutral":    {"emoji": "😐", "color": "#94a3b8"},
+    "neutral":    {"emoji": "😐",  "color": "#94a3b8"},
     "relief":     {"emoji": "😮‍💨", "color": "#6ee7b7"},
-    "sadness":    {"emoji": "😢", "color": "#60a5fa"},
-    "surprise":   {"emoji": "😲", "color": "#a78bfa"},
-    "worry":      {"emoji": "😟", "color": "#fb923c"},
+    "sadness":    {"emoji": "😢",  "color": "#60a5fa"},
+    "surprise":   {"emoji": "😲",  "color": "#a78bfa"},
+    "worry":      {"emoji": "😟",  "color": "#fb923c"},
 }
 
+# ================================================================
+# CONTEXT TYPE META — UI mein dikhega
+# ================================================================
+CONTEXT_TYPE_META = {
+    "emotion_shift": {
+        "label":       "Emotion Shift Detected",
+        "description": "Emotion changed from previous to current message",
+        "icon":        "🔄",
+        "color":       "#f59e0b",
+        "badge":       "SHIFT"
+    },
+    "same_emotion": {
+        "label":       "Emotion Consistent",
+        "description": "Emotion remained same across the conversation",
+        "icon":        "➡️",
+        "color":       "#22c55e",
+        "badge":       "SAME"
+    },
+    "window3": {
+        "label":       "Multi-turn Context",
+        "description": "Emotion influenced by multi-message conversation pattern",
+        "icon":        "💬",
+        "color":       "#6366f1",
+        "badge":       "CONV"
+    },
+    "single": {
+        "label":       "Single Message",
+        "description": "No previous context — analyzed independently",
+        "icon":        "📝",
+        "color":       "#94a3b8",
+        "badge":       "SOLO"
+    }
+}
+
+def _resolve_label(model_obj, idx):
+    raw = model_obj.config.id2label.get(idx, f"LABEL_{idx}")
+    return label_map.get(raw, raw)
+
+
+def _quick_predict(tok, mdl, text):
+    """Single text ka emotion quickly predict karo (context type detection ke liye)."""
+    try:
+        inputs = tok(text, return_tensors="pt", truncation=True, padding=True, max_length=128).to(device)
+        with torch.no_grad():
+            outputs = mdl(**inputs)
+        idx = torch.argmax(outputs.logits, dim=1).item()
+        return _resolve_label(mdl, idx)
+    except Exception:
+        return "unknown"
+
+
+def _detect_context_type_single(prev_emotion, curr_emotion, has_previous):
+    """
+    Tab 2 ke liye — sirf prev + current compare karo.
+    """
+    if not has_previous:
+        return "single"
+    if prev_emotion == curr_emotion:
+        return "same_emotion"
+    return "emotion_shift"
+
+
+def _detect_context_type(history_emotions):
+    """
+    Tab 3 ke liye — puri conversation ki emotion timeline se context type detect karo.
+
+    Rules:
+      - 1 message only          → "single"
+      - 3+ messages, shift hua  → "emotion_shift"
+      - 3+ messages, same raha  → "window3"  (multi-turn stable)
+      - 2 messages, same        → "same_emotion"
+      - 2 messages, different   → "emotion_shift"
+    """
+    if not history_emotions or len(history_emotions) <= 1:
+        return "single"
+
+    emotions = [e["emotion"] for e in history_emotions
+                if e.get("emotion") and e["emotion"] != "unknown"]
+
+    if len(emotions) < 2:
+        return "single"
+
+    has_shift = any(emotions[i] != emotions[i + 1] for i in range(len(emotions) - 1))
+
+    if len(emotions) >= 3:
+        return "emotion_shift" if has_shift else "window3"
+
+    # Exactly 2
+    return "emotion_shift" if has_shift else "same_emotion"
+
+
+# ================================================================
+# JSON SAFETY HELPER
+# ================================================================
+def _to_json_safe(obj):
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_to_json_safe(v) for v in obj]
+    elif isinstance(obj, (np.floating, np.float32, np.float64)):
+        return float(obj)
+    elif isinstance(obj, (np.integer, np.int32, np.int64)):
+        return int(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, torch.Tensor):
+        return obj.item() if obj.numel() == 1 else obj.tolist()
+    return obj
 
 # ================================================================
 # XAI HELPERS
 # ================================================================
-
-def _get_attention_scores(inputs, outputs):
-    """Average CLS attention across all heads of the last layer."""
-    last_layer_attn = outputs.attentions[-1]       # [batch, heads, seq, seq]
-    cls_attn = last_layer_attn[0].mean(dim=0)[0]   # avg heads → [seq]
+def _get_attention_scores(outputs):
+    last_layer_attn = outputs.attentions[-1]
+    cls_attn        = last_layer_attn[0].mean(dim=0)[0]
     return cls_attn.cpu().detach().numpy()
 
 
-def _get_gradient_saliency(inputs, target_idx):
-    """
-    Gradient saliency: L2 norm of input-embedding gradient w.r.t. predicted class.
-    Returns numpy array [seq_len] or None.
-    """
+def _get_gradient_saliency(inputs, target_idx, model_obj, arch):
     try:
-        emb_layer = model.bert.embeddings if hasattr(model, "bert") else None
-        if emb_layer is None:
-            return None
+        if arch == "roberta":
+            emb_layer = model_obj.roberta.embeddings
+        elif arch == "bert":
+            emb_layer = model_obj.bert.embeddings
+        else:
+            return np.zeros(inputs["input_ids"].shape[1])
 
         input_ids      = inputs["input_ids"]
+        attention_mask = inputs.get("attention_mask")
         token_type_ids = inputs.get("token_type_ids", torch.zeros_like(input_ids))
         position_ids   = torch.arange(input_ids.size(1), device=device).unsqueeze(0)
 
-        embeds   = emb_layer.word_embeddings(input_ids).requires_grad_(True)
+        word_emb = emb_layer.word_embeddings(input_ids)
+        word_emb.retain_grad()
+
         pos_emb  = emb_layer.position_embeddings(position_ids)
         tok_emb  = emb_layer.token_type_embeddings(token_type_ids)
-        full_emb = emb_layer.LayerNorm(embeds + pos_emb + tok_emb)
+        full_emb = emb_layer.LayerNorm(word_emb + pos_emb + tok_emb)
         full_emb = emb_layer.dropout(full_emb)
 
-        out   = model(inputs_embeds=full_emb, attention_mask=inputs.get("attention_mask"))
+        out   = model_obj(inputs_embeds=full_emb, attention_mask=attention_mask)
         score = out.logits[0, target_idx]
+
+        model_obj.zero_grad()
         score.backward()
 
-        grad     = embeds.grad[0].cpu().detach().numpy()   # [seq, hidden]
-        saliency = np.linalg.norm(grad, axis=-1)           # [seq]
-        return saliency
+        if word_emb.grad is None:
+            return np.zeros(input_ids.shape[1])
+
+        return word_emb.grad[0].norm(dim=-1).cpu().detach().numpy()
 
     except Exception as e:
-        print("Gradient saliency error:", e)
-        return None
+        print(f"Gradient saliency error ({arch}):", e)
+        return np.zeros(inputs["input_ids"].shape[1])
 
 
 def _build_token_list(tokens, attn_scores, saliency, token_type_ids_tensor=None):
-    """
-    Build per-token payload combining attention + saliency into combined_score.
-    """
-    results  = []
+    results   = []
     sep_count = 0
-    attn_max = attn_scores.max() or 1.0
-    sal_max  = (saliency.max() if saliency is not None else 1.0) or 1.0
+    attn_max  = float(attn_scores.max()) or 1.0
+    sal_max   = (float(saliency.max()) if saliency is not None else 1.0) or 1.0
 
     for i, token in enumerate(tokens):
-        if token == '[SEP]':
+        if token in ['[SEP]', '</s>']:
             sep_count += 1
             results.append({
-                "token": "[SEP]", "score": 0, "prefix": " ",
+                "token": "[SEP]", "score": 0.0, "prefix": " ",
                 "is_sep": True, "segment": sep_count,
-                "saliency": 0, "combined": 0
+                "saliency": 0.0, "combined": 0.0
             })
             continue
-        if token in ['[CLS]', '[PAD]']:
+        if token in ['[CLS]', '[PAD]', '<s>', '<pad>', '<mask>']:
             continue
 
         attn_norm = float(attn_scores[i]) / attn_max
@@ -146,128 +287,100 @@ def _build_token_list(tokens, attn_scores, saliency, token_type_ids_tensor=None)
 
         seg = 0
         if token_type_ids_tensor is not None:
-            seg = int(token_type_ids_tensor[0][i].item())
+            try:
+                seg = int(token_type_ids_tensor[0][i].item())
+            except Exception:
+                seg = 0
+
+        is_bert_subword = token.startswith("##")
+        clean_token     = token.replace("##", "").lstrip("Ġ")
+        prefix          = "" if is_bert_subword else " "
 
         results.append({
-            "token":    token.replace("##", ""),
-            "score":    attn_norm,
-            "saliency": sal_norm,
-            "combined": combined,
-            "prefix":   "" if token.startswith("##") else " ",
+            "token":    clean_token,
+            "score":    float(attn_norm),
+            "saliency": float(sal_norm),
+            "combined": float(combined),
+            "prefix":   prefix,
             "is_sep":   False,
-            "segment":  seg
+            "segment":  int(seg)
         })
     return results
 
 
-def get_xai_data(text):
-    """Standard single-text XAI. Returns (token_list, top_keywords)."""
-    if not model:
+def _run_xai(tokenizer_obj, model_obj, arch, text_a, text_b=None):
+    if model_obj is None:
         return [], []
 
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True).to(device)
+    if text_b:
+        inputs = tokenizer_obj(
+            text_a, text_b,
+            return_tensors="pt", truncation=True, padding=True, max_length=512
+        ).to(device)
+    else:
+        inputs = tokenizer_obj(
+            text_a, return_tensors="pt", truncation=True, padding=True
+        ).to(device)
 
     with torch.no_grad():
-        outputs = model(**inputs)
+        outputs = model_obj(**inputs)
 
-    target_idx  = torch.argmax(outputs.logits, dim=1).item()
-    attn_scores = _get_attention_scores(inputs, outputs)
-    saliency    = _get_gradient_saliency(inputs, target_idx)
-    tokens      = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
-    results     = _build_token_list(tokens, attn_scores, saliency)
-
+    target_idx   = torch.argmax(outputs.logits, dim=1).item()
+    attn_scores  = _get_attention_scores(outputs)
+    saliency     = _get_gradient_saliency(inputs, target_idx, model_obj, arch)
+    tokens       = tokenizer_obj.convert_ids_to_tokens(inputs["input_ids"][0])
+    tti          = inputs.get("token_type_ids", None)
+    results      = _build_token_list(tokens, attn_scores, saliency, tti)
     word_tokens  = [r for r in results if not r["is_sep"]]
     top_keywords = sorted(word_tokens, key=lambda x: x["combined"], reverse=True)[:5]
     return results, top_keywords
 
-
-def get_xai_data_contextual(previous_text, current_text):
-    """Context-aware XAI for Previous [SEP] Current. Returns (token_list, top_keywords)."""
-    if not model:
-        return [], []
-
-    inputs = tokenizer(previous_text, current_text, return_tensors="pt",
-                       truncation=True, padding=True, max_length=512).to(device)
-
-    with torch.no_grad():
-        outputs = model(**inputs)
-
-    target_idx  = torch.argmax(outputs.logits, dim=1).item()
-    attn_scores = _get_attention_scores(inputs, outputs)
-    saliency    = _get_gradient_saliency(inputs, target_idx)
-    tokens      = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
-    tti         = inputs.get("token_type_ids", None)
-    results     = _build_token_list(tokens, attn_scores, saliency, tti)
-
-    word_tokens  = [r for r in results if not r["is_sep"]]
-    top_keywords = sorted(word_tokens, key=lambda x: x["combined"], reverse=True)[:5]
-    return results, top_keywords
-
-
 # ================================================================
-# XAI EXPLANATION BUILDER  ← WHY this emotion was predicted
+# XAI EXPLANATION BUILDER
 # ================================================================
-
 def build_xai_explanation(label, text, top_keywords, confidence,
-                           previous_text=None, contextual_mode=False):
-    """
-    Returns a structured dict that fully explains WHY the emotion was predicted:
-      - trigger_words   : top tokens by attention + gradient saliency
-      - attention_note  : plain-English note about BERT attention focus
-      - gradient_note   : gradient saliency insight
-      - context_note    : how previous message influenced (contextual mode only)
-      - confidence_note : what the confidence level means
-      - llm_why         : Gemini 3-part deep-dive explanation
-    """
+                           previous_text=None, contextual_mode=False,
+                           context_type=None):
     kw_labels    = [k["token"] for k in top_keywords]
     emotion_meta = EMOTION_META.get(label, {"emoji": "🎭", "color": "#6366f1"})
 
-    # Attention note
     attention_note = (
-        f"BERT's attention focused most on: {', '.join(kw_labels[:3])}. "
-        f"These tokens contributed most to the final [{label.upper()}] classification."
+        f"Model's attention focused most on: {', '.join(kw_labels[:3])}. "
+        f"These tokens contributed most to the [{label.upper()}] classification."
     )
 
-    # Gradient saliency note
     has_saliency = any(k.get("saliency", 0) > 0 for k in top_keywords)
     if has_saliency:
         sal_top = sorted(top_keywords, key=lambda x: x.get("saliency", 0), reverse=True)[:2]
         gradient_note = (
             f"Gradient saliency confirms '{sal_top[0]['token']}'"
             + (f" and '{sal_top[1]['token']}'" if len(sal_top) > 1 else "")
-            + " as the most decisive words for this prediction."
+            + " as the most decisive words."
         )
     else:
-        gradient_note = (
-            "Attention scores were used as the primary signal "
-            "(gradient saliency unavailable for this model configuration)."
-        )
+        gradient_note = "Attention scores used as primary signal (gradient saliency unavailable)."
 
-    # Context note (contextual mode only)
     context_note = None
     if contextual_mode and previous_text:
         prev_tokens = [k["token"] for k in top_keywords if k.get("segment") == 0]
         curr_tokens = [k["token"] for k in top_keywords if k.get("segment") == 1]
         short_prev  = previous_text[:60] + ("..." if len(previous_text) > 60 else "")
-        context_note = (
-            f"In contextual mode, BERT read the previous message (\"{short_prev}\") as background. "
-        )
+        context_note = f"Model read previous message (\"{short_prev}\") as context. "
         if prev_tokens:
-            context_note += f"Key context words from the previous message: {', '.join(prev_tokens)}. "
+            context_note += f"Context trigger words: {', '.join(prev_tokens)}. "
         if curr_tokens:
-            context_note += f"Key trigger words from the current message: {', '.join(curr_tokens)}."
+            context_note += f"Current trigger words: {', '.join(curr_tokens)}."
 
-    # Confidence note
     conf_val = float(confidence.replace("%", ""))
     if conf_val >= 85:
-        confidence_note = f"Very high confidence ({confidence}) — the model is strongly certain about this prediction."
+        confidence_note = f"Very high confidence ({confidence}) — model is strongly certain."
     elif conf_val >= 65:
-        confidence_note = f"Moderate confidence ({confidence}) — the prediction is likely correct but some ambiguity exists."
+        confidence_note = f"Moderate confidence ({confidence}) — likely correct, some ambiguity."
     else:
-        confidence_note = f"Lower confidence ({confidence}) — the text may contain mixed or subtle emotional signals."
+        confidence_note = f"Lower confidence ({confidence}) — mixed emotional signals possible."
 
-    # Gemini deep-dive
-    llm_why = _get_gemini_xai_why(label, text, kw_labels, previous_text, contextual_mode)
+    llm_why  = _get_gemini_xai_why(label, text, kw_labels, previous_text, contextual_mode)
+    ctx_meta = CONTEXT_TYPE_META.get(context_type or "single", CONTEXT_TYPE_META["single"])
 
     return {
         "emotion":         label,
@@ -279,98 +392,75 @@ def build_xai_explanation(label, text, top_keywords, confidence,
         "context_note":    context_note,
         "confidence_note": confidence_note,
         "llm_why":         llm_why,
+        "context_type":    ctx_meta,   # ← NEW: context type in XAI panel bhi
     }
 
 
 def _get_gemini_xai_why(label, text, top_keywords, previous_text, contextual_mode):
-    """Ask Gemini for a structured 3-part WHY explanation."""
     try:
         if not gemini_model:
-            raise ValueError("No Gemini model")
-
+            raise ValueError("No Gemini")
         kw_str    = ", ".join(f'"{w}"' for w in top_keywords)
-        ctx_block = ""
-        if contextual_mode and previous_text:
-            ctx_block = f'\nPrevious message (context): "{previous_text}"'
-
+        ctx_block = f'\nPrevious message: "{previous_text}"' if (contextual_mode and previous_text) else ""
         prompt = f"""You are an expert NLP explainability assistant.
-
-A BERT model predicted the emotion "{label}" for the following text.
-The model's attention and gradient saliency highlighted these key words: {kw_str}.{ctx_block}
-
+A model predicted the emotion "{label}" for the text below.
+Key words highlighted: {kw_str}.{ctx_block}
 Text: "{text}"
 
-Explain in exactly 3 parts, each 1-2 sentences:
-1. LINGUISTIC REASON: What words, phrases, or tone signal "{label}"?
-2. BERT ATTENTION INSIGHT: Why would BERT focus on those specific keywords ({kw_str})?
-3. EMOTIONAL LOGIC: How does the overall context confirm "{label}" as the right emotion?
-
-Format your answer like this (use these exact labels):
+Explain in exactly 3 parts (1-2 sentences each):
 LINGUISTIC REASON: ...
-BERT ATTENTION INSIGHT: ...
+MODEL ATTENTION INSIGHT: ...
 EMOTIONAL LOGIC: ...
 """
         resp = gemini_model.generate_content(prompt)
         if resp and resp.candidates:
             return resp.candidates[0].content.parts[0].text.strip()
-
     except Exception as e:
-        print("Gemini XAI WHY error:", e)
-
+        print("Gemini XAI error:", e)
     return (
         f"LINGUISTIC REASON: The words {', '.join(top_keywords[:3])} carry strong {label} signals.\n"
-        f"BERT ATTENTION INSIGHT: BERT focused on these tokens because they are emotionally charged in the context of {label}.\n"
-        f"EMOTIONAL LOGIC: The overall tone and vocabulary of the sentence align with {label} emotion."
+        f"MODEL ATTENTION INSIGHT: These tokens are emotionally charged in this context.\n"
+        f"EMOTIONAL LOGIC: Overall tone and vocabulary align with {label}."
     )
 
-
 # ================================================================
-# LLM EXPLANATION FUNCTIONS (original, preserved)
+# LLM EXPLANATION FUNCTIONS
 # ================================================================
-
 def get_llm_free(label, text, previous_text=None):
     try:
         if gemini_model:
             if previous_text:
                 prompt = (
-                    f'You are analyzing an emotion in a conversation.\n'
-                    f'Previous message: "{previous_text}"\nCurrent message: "{text}"\n'
-                    f'Detected emotion: {label}\n'
-                    f'Explain clearly in 2 short sentences why the current message expresses {label}. '
-                    f'Consider how the previous message provides context. Mention important keywords.'
+                    f'Analyze this conversation.\nPrevious: "{previous_text}"\nCurrent: "{text}"\n'
+                    f'Emotion: {label}\nExplain in 2 sentences why current message expresses {label}, '
+                    f'considering context. Mention key words.'
                 )
             else:
                 prompt = (
-                    f'Explain clearly in 2 short sentences why the emotion is {label}. '
-                    f'Mention important keywords from the sentence.\nText: "{text}"'
+                    f'Explain in 2 sentences why emotion is {label}. '
+                    f'Mention key words.\nText: "{text}"'
                 )
             resp = gemini_model.generate_content(prompt)
             if resp and resp.candidates:
                 return resp.candidates[0].content.parts[0].text
     except Exception as e:
         print("Gemini Error:", e)
-    return f"The sentence expresses {label} emotion because of emotional keywords and tone."
+    return f"The sentence expresses {label} emotion based on emotional keywords and tone."
 
 
 def get_controlled_explanation(label, text, previous_text=None):
     try:
         if gemini_model:
-            ctx = f'Previous message: "{previous_text}"\n' if previous_text else ""
-            prompt = f"""You are an Emotion Detection Assistant.
-Analyze emotion carefully and give only 2 line explanation.
+            ctx = f'Previous: "{previous_text}"\n' if previous_text else ""
+            prompt = f"""You are an Emotion Detection Assistant. Give only 2 line explanation.
 
-Examples:
 Text: "I just won tickets to my favorite concert!!!"
 Emotion: joy
-Explanation: The sentence shows joy because the speaker is excited and happy.
+Explanation: Shows joy because the speaker is excited and happy.
 
 Text: "I miss my old friends so much."
 Emotion: love
-Explanation: The sentence expresses love due to emotional attachment and affection.
-
-Text: "I am so frustrated with everything today."
-Emotion: anger
-Explanation: The sentence shows anger because of irritation and negative tone.
+Explanation: Expresses love due to emotional attachment and affection.
 
 Now analyze:
 {ctx}Text: "{text}"
@@ -381,102 +471,275 @@ Explanation:"""
                 return resp.candidates[0].content.parts[0].text
     except Exception as e:
         print("Gemini Controlled Error:", e)
-    return f"This sentence expresses {label} emotion based on tone and keywords."
+    return f"Expresses {label} emotion based on tone and keywords."
 
+# ================================================================
+# CONVERSATION HELPERS
+# ================================================================
+def _build_rolling_context(history, max_chars=1600):
+    if not history or len(history) < 2:
+        return None
+    parts = []
+    for msg in reversed(history[:-1]):
+        text = msg.get("text", "").strip()
+        line = f"[{msg.get('role','user').upper()}]: {text}"
+        if len(" | ".join(parts + [line])) > max_chars:
+            break
+        parts.insert(0, line)
+    return " | ".join(parts) if parts else None
+
+
+def _get_gemini_conv_explanation(label, current_text, history, top_keywords, context_type):
+    try:
+        if not gemini_model:
+            raise ValueError("No Gemini")
+        history_str = "\n".join(
+            f"  [{m.get('role','user').upper()}]: {m.get('text','')}"
+            for m in history[:-1][-5:]
+        )
+        kw_str = ", ".join(f'"{w}"' for w in top_keywords)
+
+        # Context type aware hint for Gemini
+        ctx_hint = {
+            "emotion_shift": "Note: The emotion has SHIFTED from the previous message. Explain this shift clearly.",
+            "same_emotion":  "Note: The emotion remained CONSISTENT throughout the conversation.",
+            "window3":       "Note: This is a multi-turn conversation. Emotion is shaped by multiple prior messages.",
+            "single":        ""
+        }.get(context_type, "")
+
+        prompt = f"""You are an expert in conversational emotion analysis.
+
+Conversation history:
+{history_str}
+
+Current message: "{current_text}"
+Detected emotion: {label}
+Key words: {kw_str}
+{ctx_hint}
+
+Explain in exactly 3 parts:
+CONVERSATION CONTEXT: ...
+CURRENT TRIGGER: ...
+EMOTION SHIFT: ..."""
+        resp = gemini_model.generate_content(prompt)
+        if resp and resp.candidates:
+            return resp.candidates[0].content.parts[0].text.strip()
+    except Exception as e:
+        print("Gemini conv error:", e)
+    return (
+        f"CONVERSATION CONTEXT: Previous messages provide emotional background.\n"
+        f"CURRENT TRIGGER: Words {', '.join(top_keywords[:3])} signal {label}.\n"
+        f"EMOTION SHIFT: Emotion analyzed relative to full conversation context."
+    )
 
 # ================================================================
 # ROUTES
 # ================================================================
-
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
+# ----------------------------------------------------------------
+# /predict — Tab 1 (Single Text) → BERT | Tab 2 (Contextual) → RoBERTa
+# ----------------------------------------------------------------
 @app.route("/predict", methods=["POST"])
 def predict():
-    print("PREDICT ROUTE HIT")
-
-    if not model:
-        return jsonify({"error": "Model not loaded"}), 500
+    print("\n── /predict ──")
 
     text, previous_text = None, None
-
     data = request.get_json(silent=True)
     if data:
         text          = data.get("text") or data.get("message") or data.get("input") or data.get("sentence")
         previous_text = data.get("previous_text") or data.get("context") or None
-
     if not text:
         text = request.form.get("text")
     if not previous_text:
         previous_text = request.form.get("previous_text") or None
-
     if not text:
         raw = request.data.decode("utf-8").strip()
         if raw:
             text = raw
-
-    print("TEXT:", text)
-    print("PREV:", previous_text)
-
     if not text:
         return jsonify({"error": "No text provided"}), 400
 
     contextual_mode = bool(previous_text and previous_text.strip())
+    tok, mdl, arch  = _get_model(contextual=contextual_mode)
+    if mdl is None:
+        return jsonify({"error": "No model loaded"}), 500
 
-    # ── Tokenise ──
+    print(f"   Mode: {'Contextual → RoBERTa' if contextual_mode else 'Standard → BERT'}")
+
     if contextual_mode:
-        inputs = tokenizer(previous_text, text, return_tensors="pt",
-                           truncation=True, padding=True, max_length=512).to(device)
-        print("🔗 Contextual mode")
+        inputs = tok(
+            previous_text, text,
+            return_tensors="pt", truncation=True, padding=True, max_length=512
+        ).to(device)
     else:
-        inputs = tokenizer(text, return_tensors="pt",
-                           truncation=True, padding=True).to(device)
-        print("📝 Standard mode")
+        inputs = tok(
+            text, return_tensors="pt", truncation=True, padding=True
+        ).to(device)
 
     with torch.no_grad():
-        outputs = model(**inputs)
+        outputs = mdl(**inputs)
 
-    probs     = F.softmax(outputs.logits, dim=1)
-    conf, idx = torch.max(probs, dim=1)
+    probs          = F.softmax(outputs.logits, dim=1)
+    conf, idx      = torch.max(probs, dim=1)
+    label          = _resolve_label(mdl, idx.item())
+    all_probs      = {_resolve_label(mdl, i): float(p) for i, p in enumerate(probs[0])}
+    confidence_str = f"{float(conf.item())*100:.2f}%"
 
-    raw_label = model.config.id2label[idx.item()]
-    label     = label_map.get(raw_label, raw_label)
+    # ── Context type detection (Tab 2) ──
+    context_type = "single"
+    prev_emotion = None
+    if contextual_mode and previous_text:
+        prev_emotion = _quick_predict(tok, mdl, previous_text)
+        context_type = _detect_context_type_single(prev_emotion, label, has_previous=True)
 
-    all_probs = {
-        label_map.get(model.config.id2label[i], model.config.id2label[i]): float(p)
-        for i, p in enumerate(probs[0])
-    }
+    ctx_meta = CONTEXT_TYPE_META.get(context_type, CONTEXT_TYPE_META["single"])
 
-    confidence_str = f"{conf.item()*100:.2f}%"
-
-    # ── XAI ──
-    if contextual_mode:
-        attention_map, top_keywords = get_xai_data_contextual(previous_text, text)
-    else:
-        attention_map, top_keywords = get_xai_data(text)
-
-    # ── Structured XAI WHY Explanation ──
-    xai_explanation = build_xai_explanation(
-        label, text, top_keywords, confidence_str,
-        previous_text=previous_text, contextual_mode=contextual_mode
+    attention_map, top_keywords = _run_xai(
+        tok, mdl, arch,
+        text_a=previous_text if contextual_mode else text,
+        text_b=text if contextual_mode else None
     )
 
-    # ── LLM Explanations (original, preserved) ──
+    xai_explanation        = build_xai_explanation(label, text, top_keywords, confidence_str,
+                                                    previous_text=previous_text,
+                                                    contextual_mode=contextual_mode,
+                                                    context_type=context_type)
     explanation            = get_llm_free(label, text, previous_text if contextual_mode else None)
     controlled_explanation = get_controlled_explanation(label, text, previous_text if contextual_mode else None)
 
-    return jsonify({
+    response = _to_json_safe({
         "emotion":                label,
         "confidence":             confidence_str,
         "attention_map":          attention_map,
         "all_probs":              all_probs,
         "explanation":            explanation,
         "controlled_explanation": controlled_explanation,
-        "xai_explanation":        xai_explanation,   # ← NEW structured WHY block
+        "xai_explanation":        xai_explanation,
         "contextual_mode":        contextual_mode,
+        "model_used":             "RoBERTa (bert_contextual_model/)" if contextual_mode else "BERT (bert_model/)",
+        # ── NEW fields ──
+        "context_type":           context_type,
+        "context_type_meta":      ctx_meta,
+        "previous_emotion":       prev_emotion,
     })
+    return jsonify(response)
+
+
+# ----------------------------------------------------------------
+# /predict_conversation — Tab 3 (Conversation History) → RoBERTa
+# ----------------------------------------------------------------
+@app.route("/predict_conversation", methods=["POST"])
+def predict_conversation():
+    print("\n── /predict_conversation ──")
+
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+
+    history = data.get("history", [])
+    if not history or not isinstance(history, list):
+        return jsonify({"error": "history must be a non-empty list"}), 400
+
+    current_text = history[-1].get("text", "").strip()
+    if not current_text:
+        return jsonify({"error": "Last history item must have non-empty 'text'"}), 400
+
+    tok, mdl, arch = _get_model(contextual=True)
+    if mdl is None:
+        return jsonify({"error": "No model loaded"}), 500
+
+    rolling_context = _build_rolling_context(history)
+    contextual_mode = bool(rolling_context)
+
+    print(f"   Messages: {len(history)}, Context: {'YES' if contextual_mode else 'NO'}")
+
+    if contextual_mode:
+        inputs = tok(
+            rolling_context, current_text,
+            return_tensors="pt", truncation=True, padding=True, max_length=512
+        ).to(device)
+    else:
+        inputs = tok(
+            current_text, return_tensors="pt", truncation=True, padding=True
+        ).to(device)
+
+    with torch.no_grad():
+        outputs = mdl(**inputs)
+
+    probs          = F.softmax(outputs.logits, dim=1)
+    conf, idx      = torch.max(probs, dim=1)
+    label          = _resolve_label(mdl, idx.item())
+    all_probs      = {_resolve_label(mdl, i): float(p) for i, p in enumerate(probs[0])}
+    confidence_str = f"{float(conf.item())*100:.2f}%"
+
+    attention_map, top_keywords = _run_xai(
+        tok, mdl, arch,
+        text_a=rolling_context if contextual_mode else current_text,
+        text_b=current_text if contextual_mode else None
+    )
+
+    # ── Per-message emotion timeline ──
+    history_emotions = []
+    for msg in history:
+        msg_text = msg.get("text", "").strip()
+        if not msg_text:
+            continue
+        try:
+            msg_inputs = tok(
+                msg_text, return_tensors="pt", truncation=True, padding=True
+            ).to(device)
+            with torch.no_grad():
+                msg_outputs = mdl(**msg_inputs)
+            msg_probs         = F.softmax(msg_outputs.logits, dim=1)
+            msg_conf, msg_idx = torch.max(msg_probs, dim=1)
+            msg_label         = _resolve_label(mdl, msg_idx.item())
+            history_emotions.append({
+                "text":       msg_text,
+                "role":       msg.get("role", "user"),
+                "emotion":    msg_label,
+                "confidence": f"{float(msg_conf.item())*100:.1f}%",
+                "emoji":      EMOTION_META.get(msg_label, {}).get("emoji", "🎭"),
+                "color":      EMOTION_META.get(msg_label, {}).get("color", "#6366f1"),
+            })
+        except Exception as e:
+            print(f"Per-message error: {e}")
+            history_emotions.append({
+                "text": msg_text, "role": msg.get("role", "user"),
+                "emotion": "unknown", "confidence": "0%",
+                "emoji": "❓", "color": "#64748b"
+            })
+
+    # ── Context type detect karo emotion timeline se ──
+    context_type = _detect_context_type(history_emotions)
+    ctx_meta     = CONTEXT_TYPE_META.get(context_type, CONTEXT_TYPE_META["single"])
+
+    xai_explanation  = build_xai_explanation(label, current_text, top_keywords, confidence_str,
+                                              previous_text=rolling_context,
+                                              contextual_mode=contextual_mode,
+                                              context_type=context_type)
+    kw_labels        = [k["token"] for k in top_keywords]
+    conv_explanation = _get_gemini_conv_explanation(label, current_text, history, kw_labels, context_type)
+
+    response = _to_json_safe({
+        "emotion":              label,
+        "confidence":           confidence_str,
+        "all_probs":            all_probs,
+        "attention_map":        attention_map,
+        "xai_explanation":      xai_explanation,
+        "conv_explanation":     conv_explanation,
+        "history_emotions":     history_emotions,
+        "contextual_mode":      contextual_mode,
+        "rolling_context_used": rolling_context,
+        "model_used":           "RoBERTa (bert_contextual_model/)",
+        # ── NEW fields ──
+        "context_type":         context_type,
+        "context_type_meta":    ctx_meta,
+    })
+    return jsonify(response)
 
 
 # ── RUN ──
