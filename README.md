@@ -97,7 +97,7 @@ The trained model file (`bert_emotion_model.pth`) is not included in this reposi
 
 ### To run the project:
 
-1. Download the model from: **[ADD YOUR LINK HERE]**
+1. Download the model from: https://drive.google.com/drive/folders/1gkoNqbWTdomB3sng6fRlpDxTDyRGLX0Q?usp=sharing
 2. Place it in the root directory
 
 ---
