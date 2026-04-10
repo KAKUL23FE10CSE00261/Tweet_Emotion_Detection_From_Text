@@ -14,11 +14,17 @@ app = Flask("Tweet Emotion Detection")
 CORS(app)
 
 # ===== BERT =====
-if not os.path.exists("bert_model"):
+def _model_weights_exist(folder):
+    """Check if model weights are present (not just tokenizer/config files)."""
+    weight_files = ["pytorch_model.bin", "model.safetensors", "tf_model.h5",
+                    "model.ckpt.index", "flax_model.msgpack"]
+    return any(os.path.exists(os.path.join(folder, f)) for f in weight_files)
+
+if not os.path.exists("bert_model") or not _model_weights_exist("bert_model"):
     print("Downloading BERT model...")
 
-    # delete old folder if exists
-    os.system("rm -rf bert_model")
+    # delete old folder if exists (may have partial/tokenizer-only files)
+    os.system("rm -rf bert_model bert_model.zip")
 
     import gdown
     gdown.download(
@@ -30,7 +36,7 @@ if not os.path.exists("bert_model"):
     os.system("unzip -o bert_model.zip -d .")
     
 # ===== ROBERTA =====
-if not os.path.exists("bert_contextual_model"):
+if not os.path.exists("bert_contextual_model") or not _model_weights_exist("bert_contextual_model"):
     print("Downloading ROBERTA model...")
     gdown.download(id="1zHcKqWcQ2E1Tcq1kEvbsTNtR0GLkFEAU", output="roberta.zip", quiet=False)
     os.system("unzip -o roberta.zip")
