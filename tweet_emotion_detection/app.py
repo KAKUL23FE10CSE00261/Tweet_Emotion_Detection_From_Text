@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 from flask_cors import CORS
 import numpy as np
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import gdown
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
@@ -51,10 +52,11 @@ print("Files in bert_model:", os.listdir("bert_model") if os.path.exists("bert_m
 GEMINI_KEY = "AIzaSyBTFc17pWhYuGFD32hUTL-7Sy70QIlxwk4"
 
 if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
-    gemini_model = genai.GenerativeModel("gemini-2.0-flash")
+    gemini_client = genai.Client(api_key=GEMINI_KEY)
+    gemini_model = "gemini-2.0-flash"
     print("✅ Gemini Connected")
 else:
+    gemini_client = None
     gemini_model = None
     print("❌ Gemini Not Connected")
 
@@ -451,7 +453,7 @@ def build_xai_explanation(label, text, top_keywords, confidence,
 
 def _get_gemini_xai_why(label, text, top_keywords, previous_text, contextual_mode):
     try:
-        if not gemini_model:
+        if not gemini_client:
             raise ValueError("No Gemini")
         kw_str    = ", ".join(f'"{w}"' for w in top_keywords)
         ctx_block = f'\nPrevious message: "{previous_text}"' if (contextual_mode and previous_text) else ""
@@ -465,9 +467,9 @@ LINGUISTIC REASON: ...
 MODEL ATTENTION INSIGHT: ...
 EMOTIONAL LOGIC: ...
 """
-        resp = gemini_model.generate_content(prompt)
-        if resp and resp.candidates:
-            return resp.candidates[0].content.parts[0].text.strip()
+        resp = gemini_client.models.generate_content(model=gemini_model, contents=prompt)
+        if resp and resp.text:
+            return resp.text.strip()
     except Exception as e:
         print("Gemini XAI error:", e)
     return (
@@ -481,7 +483,7 @@ EMOTIONAL LOGIC: ...
 # ================================================================
 def get_llm_free(label, text, previous_text=None):
     try:
-        if gemini_model:
+        if gemini_client:
             if previous_text:
                 prompt = (
                     f'Analyze this conversation.\nPrevious: "{previous_text}"\nCurrent: "{text}"\n'
@@ -493,9 +495,9 @@ def get_llm_free(label, text, previous_text=None):
                     f'Explain in 2 sentences why emotion is {label}. '
                     f'Mention key words.\nText: "{text}"'
                 )
-            resp = gemini_model.generate_content(prompt)
-            if resp and resp.candidates:
-                return resp.candidates[0].content.parts[0].text
+            resp = gemini_client.models.generate_content(model=gemini_model, contents=prompt)
+            if resp and resp.text:
+                return resp.text
     except Exception as e:
         print("Gemini Error:", e)
     return f"The sentence expresses {label} emotion based on emotional keywords and tone."
@@ -503,7 +505,7 @@ def get_llm_free(label, text, previous_text=None):
 
 def get_controlled_explanation(label, text, previous_text=None):
     try:
-        if gemini_model:
+        if gemini_client:
             ctx = f'Previous: "{previous_text}"\n' if previous_text else ""
             prompt = f"""You are an Emotion Detection Assistant. Give only 2 line explanation.
 
@@ -519,9 +521,9 @@ Now analyze:
 {ctx}Text: "{text}"
 Emotion: {label}
 Explanation:"""
-            resp = gemini_model.generate_content(prompt)
-            if resp and resp.candidates:
-                return resp.candidates[0].content.parts[0].text
+            resp = gemini_client.models.generate_content(model=gemini_model, contents=prompt)
+            if resp and resp.text:
+                return resp.text
     except Exception as e:
         print("Gemini Controlled Error:", e)
     return f"Expresses {label} emotion based on tone and keywords."
@@ -574,9 +576,9 @@ Explain in exactly 3 parts:
 CONVERSATION CONTEXT: ...
 CURRENT TRIGGER: ...
 EMOTION SHIFT: ..."""
-        resp = gemini_model.generate_content(prompt)
-        if resp and resp.candidates:
-            return resp.candidates[0].content.parts[0].text.strip()
+        resp = gemini_client.models.generate_content(model=gemini_model, contents=prompt)
+        if resp and resp.text:
+            return resp.text.strip()
     except Exception as e:
         print("Gemini conv error:", e)
     return (
