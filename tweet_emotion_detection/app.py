@@ -7,10 +7,34 @@ from pathlib import Path
 from flask_cors import CORS
 import numpy as np
 import google.generativeai as genai
+import gdown
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 app = Flask("Tweet Emotion Detection")
 CORS(app)
 
+# ===== BERT =====
+if not os.path.exists("bert_model"):
+    print("Downloading BERT model...")
+    gdown.download(id="1_N1yb8pbyxnr005Eu5H7EgPmCupvcLlN", output="bert_model.zip", quiet=False)
+    os.system("unzip -o bert_model.zip")
+
+# ===== ROBERTA =====
+if not os.path.exists("bert_contextual_model"):
+    print("Downloading ROBERTA model...")
+    gdown.download(id="1zHcKqWcQ2E1Tcq1kEvbsTNtR0GLkFEAU", output="roberta.zip", quiet=False)
+    os.system("unzip -o roberta.zip")
+
+print("Loading BERT...")
+bert_tokenizer = AutoTokenizer.from_pretrained("bert_model")
+bert_model = AutoModelForSequenceClassification.from_pretrained("bert_model")
+
+print("Loading ROBERTA...")
+roberta_tokenizer = AutoTokenizer.from_pretrained("bert_contextual_model")
+roberta_model = AutoModelForSequenceClassification.from_pretrained("bert_contextual_model")
+
+print("✅ Models loaded successfully")
+    
 # ================================================================
 # GEMINI SETUP
 # ================================================================
