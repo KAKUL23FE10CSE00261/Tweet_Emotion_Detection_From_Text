@@ -17,7 +17,7 @@ CORS(app)
 if not os.path.exists("bert_model"):
     print("Downloading BERT model...")
     gdown.download(id="1Gdby4CkOeSxYl1R9OkL2v5D57vpNBANM", output="bert_model.zip", quiet=False)
-    os.system("unzip -o bert_model.zip")
+    os.system("unzip -o bert_model.zip -d .")
     
 # ===== ROBERTA =====
 if not os.path.exists("bert_contextual_model"):
@@ -25,6 +25,11 @@ if not os.path.exists("bert_contextual_model"):
     gdown.download(id="1zHcKqWcQ2E1Tcq1kEvbsTNtR0GLkFEAU", output="roberta.zip", quiet=False)
     os.system("unzip -o roberta.zip")
 
+# DEBUG
+print("Files in root:", os.listdir())
+print("Files in bert_model:", os.listdir("bert_model") if os.path.exists("bert_model") else "NOT FOUND")
+
+# LOAD
 print("Loading BERT...")
 bert_tokenizer = AutoTokenizer.from_pretrained("bert_model", local_files_only=True)
 bert_model = AutoModelForSequenceClassification.from_pretrained("bert_model", local_files_only=True)
