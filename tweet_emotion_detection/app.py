@@ -6,8 +6,16 @@ import os
 from pathlib import Path
 from flask_cors import CORS
 import numpy as np
-from google import genai
-from google.genai import types
+try:
+    from google import genai as genai
+    _GENAI_NEW = True
+except ImportError:
+    try:
+        import google.generativeai as _old_genai
+        _GENAI_NEW = False
+    except ImportError:
+        _old_genai = None
+        _GENAI_NEW = False
 import gdown
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
@@ -51,14 +59,40 @@ print("Files in bert_model:", os.listdir("bert_model") if os.path.exists("bert_m
 # ================================================================
 GEMINI_KEY = "AIzaSyBTFc17pWhYuGFD32hUTL-7Sy70QIlxwk4"
 
-if GEMINI_KEY:
-    gemini_client = genai.Client(api_key=GEMINI_KEY)
-    gemini_model = "gemini-2.0-flash"
-    print("✅ Gemini Connected")
-else:
+gemini_client = None
+gemini_model_name = "gemini-2.0-flash"
+
+try:
+    if GEMINI_KEY:
+        if _GENAI_NEW:
+            gemini_client = genai.Client(api_key=GEMINI_KEY)
+            print("✅ Gemini Connected (new SDK)")
+        else:
+            _old_genai.configure(api_key=GEMINI_KEY)
+            gemini_client = _old_genai.GenerativeModel(gemini_model_name)
+            print("✅ Gemini Connected (legacy SDK)")
+    else:
+        print("❌ Gemini Not Connected")
+except Exception as e:
     gemini_client = None
-    gemini_model = None
-    print("❌ Gemini Not Connected")
+    print(f"❌ Gemini setup failed: {e}")
+
+def _gemini_generate(prompt):
+    """Call Gemini regardless of SDK version."""
+    if not gemini_client:
+        return None
+    try:
+        if _GENAI_NEW:
+            resp = gemini_client.models.generate_content(model=gemini_model_name, contents=prompt)
+            return resp.text if resp else None
+        else:
+            resp = gemini_client.generate_content(prompt)
+            if resp and resp.candidates:
+                return resp.candidates[0].content.parts[0].text
+    except Exception as e:
+        print(f"Gemini call error: {e}")
+    return None
+
 
 # ================================================================
 # DEVICE
@@ -467,9 +501,9 @@ LINGUISTIC REASON: ...
 MODEL ATTENTION INSIGHT: ...
 EMOTIONAL LOGIC: ...
 """
-        resp = gemini_client.models.generate_content(model=gemini_model, contents=prompt)
-        if resp and resp.text:
-            return resp.text.strip()
+        resp_text = _gemini_generate(prompt)
+        if resp_text:
+            return resp_text.strip()
     except Exception as e:
         print("Gemini XAI error:", e)
     return (
@@ -495,9 +529,9 @@ def get_llm_free(label, text, previous_text=None):
                     f'Explain in 2 sentences why emotion is {label}. '
                     f'Mention key words.\nText: "{text}"'
                 )
-            resp = gemini_client.models.generate_content(model=gemini_model, contents=prompt)
-            if resp and resp.text:
-                return resp.text
+            resp_text = _gemini_generate(prompt)
+            if resp_text:
+                return resp_text
     except Exception as e:
         print("Gemini Error:", e)
     return f"The sentence expresses {label} emotion based on emotional keywords and tone."
@@ -521,9 +555,9 @@ Now analyze:
 {ctx}Text: "{text}"
 Emotion: {label}
 Explanation:"""
-            resp = gemini_client.models.generate_content(model=gemini_model, contents=prompt)
-            if resp and resp.text:
-                return resp.text
+            resp_text = _gemini_generate(prompt)
+            if resp_text:
+                return resp_text
     except Exception as e:
         print("Gemini Controlled Error:", e)
     return f"Expresses {label} emotion based on tone and keywords."
@@ -546,7 +580,7 @@ def _build_rolling_context(history, max_chars=1600):
 
 def _get_gemini_conv_explanation(label, current_text, history, top_keywords, context_type):
     try:
-        if not gemini_model:
+        if not gemini_client:
             raise ValueError("No Gemini")
         history_str = "\n".join(
             f"  [{m.get('role','user').upper()}]: {m.get('text','')}"
@@ -576,9 +610,9 @@ Explain in exactly 3 parts:
 CONVERSATION CONTEXT: ...
 CURRENT TRIGGER: ...
 EMOTION SHIFT: ..."""
-        resp = gemini_client.models.generate_content(model=gemini_model, contents=prompt)
-        if resp and resp.text:
-            return resp.text.strip()
+        resp_text = _gemini_generate(prompt)
+        if resp_text:
+            return resp_text.strip()
     except Exception as e:
         print("Gemini conv error:", e)
     return (
