@@ -45,17 +45,6 @@ if not os.path.exists("bert_contextual_model") or not _model_weights_exist("bert
 print("Files in root:", os.listdir())
 print("Files in bert_model:", os.listdir("bert_model") if os.path.exists("bert_model") else "NOT FOUND")
 
-# LOAD
-print("Loading BERT...")
-bert_tokenizer = AutoTokenizer.from_pretrained("bert_model", local_files_only=True)
-bert_model = AutoModelForSequenceClassification.from_pretrained("bert_model", local_files_only=True)
-
-print("Loading ROBERTA...")
-roberta_tokenizer = AutoTokenizer.from_pretrained("bert_contextual_model")
-roberta_model = AutoModelForSequenceClassification.from_pretrained("bert_contextual_model")
-
-print("✅ Models loaded successfully")
-    
 # ================================================================
 # GEMINI SETUP
 # ================================================================
@@ -76,51 +65,67 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"🖥  Using device: {device}")
 
 # ================================================================
-# MODEL 1 — Original BERT (bert_model/)
-# Used for: Single Text tab (Tab 1)
+# LAZY MODEL LOADING — saves ~500MB RAM at startup
+# Models are loaded on first request, not at boot.
+# float16 halves memory per model (~200MB each instead of ~400MB).
 # ================================================================
 bert_tokenizer, bert_model = None, None
-try:
-    bert_dir = (Path(__file__).parent / "bert_model").resolve()
-    bert_tokenizer = AutoTokenizer.from_pretrained(bert_dir.as_posix(), local_files_only=True)
-    bert_model = AutoModelForSequenceClassification.from_pretrained(
-        bert_dir.as_posix(), local_files_only=True, output_attentions=True
-    ).to(device)
-    bert_model.eval()
-    print("✅ Original BERT Loaded  →  bert_model/")
-except Exception as e:
-    print(f"❌ BERT LOAD FAILED: {e}")
-
-# ================================================================
-# MODEL 2 — RoBERTa (bert_contextual_model/)
-# Used for: Tab 2 (Contextual) + Tab 3 (Conversation History)
-# ================================================================
 roberta_tokenizer, roberta_model = None, None
-try:
-    roberta_dir = (Path(__file__).parent / "bert_contextual_model").resolve()
-    roberta_tokenizer = AutoTokenizer.from_pretrained(roberta_dir.as_posix(), local_files_only=True)
-    roberta_model = AutoModelForSequenceClassification.from_pretrained(
-        roberta_dir.as_posix(), local_files_only=True, output_attentions=True
-    ).to(device)
-    roberta_model.eval()
-    print("✅ RoBERTa Contextual Loaded  →  bert_contextual_model/")
-except Exception as e:
-    print(f"❌ ROBERTA LOAD FAILED: {e}")
+_bert_loaded = False
+_roberta_loaded = False
+
+def _load_bert():
+    global bert_tokenizer, bert_model, _bert_loaded
+    if _bert_loaded:
+        return
+    try:
+        bert_dir = (Path(__file__).parent / "bert_model").resolve()
+        bert_tokenizer = AutoTokenizer.from_pretrained(bert_dir.as_posix(), local_files_only=True)
+        bert_model = AutoModelForSequenceClassification.from_pretrained(
+            bert_dir.as_posix(), local_files_only=True,
+            output_attentions=True, torch_dtype=torch.float16
+        ).to(device)
+        bert_model.eval()
+        _bert_loaded = True
+        print("✅ Original BERT Loaded  →  bert_model/")
+    except Exception as e:
+        print(f"❌ BERT LOAD FAILED: {e}")
+
+def _load_roberta():
+    global roberta_tokenizer, roberta_model, _roberta_loaded
+    if _roberta_loaded:
+        return
+    try:
+        roberta_dir = (Path(__file__).parent / "bert_contextual_model").resolve()
+        roberta_tokenizer = AutoTokenizer.from_pretrained(roberta_dir.as_posix(), local_files_only=True)
+        roberta_model = AutoModelForSequenceClassification.from_pretrained(
+            roberta_dir.as_posix(), local_files_only=True,
+            output_attentions=True, torch_dtype=torch.float16
+        ).to(device)
+        roberta_model.eval()
+        _roberta_loaded = True
+        print("✅ RoBERTa Contextual Loaded  →  bert_contextual_model/")
+    except Exception as e:
+        print(f"❌ ROBERTA LOAD FAILED: {e}")
 
 # ================================================================
 # HELPER — pick correct model/tokenizer
 # ================================================================
 def _get_model(contextual=False):
     if contextual:
+        _load_roberta()
         if roberta_model is not None:
             return roberta_tokenizer, roberta_model, "roberta"
-        elif bert_model is not None:
+        _load_bert()
+        if bert_model is not None:
             print("⚠️  RoBERTa not loaded, falling back to BERT")
             return bert_tokenizer, bert_model, "bert"
     else:
+        _load_bert()
         if bert_model is not None:
             return bert_tokenizer, bert_model, "bert"
-        elif roberta_model is not None:
+        _load_roberta()
+        if roberta_model is not None:
             print("⚠️  BERT not loaded, falling back to RoBERTa")
             return roberta_tokenizer, roberta_model, "roberta"
     return None, None, None
