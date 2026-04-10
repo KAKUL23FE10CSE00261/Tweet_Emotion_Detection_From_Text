@@ -110,8 +110,8 @@ roberta_tokenizer, roberta_model = None, None
 _bert_loaded = False
 _roberta_loaded = False
 
-# Use float16 only on CUDA; CPU must stay float32
-_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+# Always use float32 — float16 on CPU does NOT support backward() (gradient saliency crashes)
+_dtype = torch.float32
 
 def _load_bert():
     global bert_tokenizer, bert_model, _bert_loaded
@@ -328,11 +328,12 @@ def _get_gradient_saliency(inputs, target_idx, model_obj, arch):
         token_type_ids = inputs.get("token_type_ids", torch.zeros_like(input_ids))
         position_ids   = torch.arange(input_ids.size(1), device=device).unsqueeze(0)
 
-        word_emb = emb_layer.word_embeddings(input_ids)
+        word_emb = emb_layer.word_embeddings(input_ids).float()
+        word_emb.requires_grad_(True)
         word_emb.retain_grad()
 
-        pos_emb  = emb_layer.position_embeddings(position_ids)
-        tok_emb  = emb_layer.token_type_embeddings(token_type_ids)
+        pos_emb  = emb_layer.position_embeddings(position_ids).float()
+        tok_emb  = emb_layer.token_type_embeddings(token_type_ids).float()
         full_emb = emb_layer.LayerNorm(word_emb + pos_emb + tok_emb)
         full_emb = emb_layer.dropout(full_emb)
 
