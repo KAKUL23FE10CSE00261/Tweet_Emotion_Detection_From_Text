@@ -17,11 +17,12 @@ CORS(app)
 if not os.path.exists("bert_model"):
     print("Downloading BERT model...")
 
-    # delete broken folder if exists
+    # delete old folder if exists
     os.system("rm -rf bert_model")
 
+    import gdown
     gdown.download(
-        "https://drive.google.com/uc?export=download&id=1Gdby4CkOeSxYl1R9OkL2v5D57vpNBANM",
+        "https://drive.google.com/uc?export=download&id=1apSKRaK5zs5Hy93cUnp6HTDYld3uMzKO",
         "bert_model.zip",
         quiet=False
     )
