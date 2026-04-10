@@ -65,14 +65,17 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"🖥  Using device: {device}")
 
 # ================================================================
-# LAZY MODEL LOADING — saves ~500MB RAM at startup
-# Models are loaded on first request, not at boot.
-# float16 halves memory per model (~200MB each instead of ~400MB).
+# LAZY MODEL LOADING — saves RAM at startup.
+# Models load on first request, not at boot.
+# float16 only used on GPU — CPU does NOT support float16 for most ops.
 # ================================================================
 bert_tokenizer, bert_model = None, None
 roberta_tokenizer, roberta_model = None, None
 _bert_loaded = False
 _roberta_loaded = False
+
+# Use float16 only on CUDA; CPU must stay float32
+_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
 
 def _load_bert():
     global bert_tokenizer, bert_model, _bert_loaded
@@ -83,7 +86,7 @@ def _load_bert():
         bert_tokenizer = AutoTokenizer.from_pretrained(bert_dir.as_posix(), local_files_only=True)
         bert_model = AutoModelForSequenceClassification.from_pretrained(
             bert_dir.as_posix(), local_files_only=True,
-            output_attentions=True, torch_dtype=torch.float16
+            output_attentions=True, torch_dtype=_dtype
         ).to(device)
         bert_model.eval()
         _bert_loaded = True
@@ -100,7 +103,7 @@ def _load_roberta():
         roberta_tokenizer = AutoTokenizer.from_pretrained(roberta_dir.as_posix(), local_files_only=True)
         roberta_model = AutoModelForSequenceClassification.from_pretrained(
             roberta_dir.as_posix(), local_files_only=True,
-            output_attentions=True, torch_dtype=torch.float16
+            output_attentions=True, torch_dtype=_dtype
         ).to(device)
         roberta_model.eval()
         _roberta_loaded = True
